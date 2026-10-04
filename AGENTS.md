@@ -35,7 +35,7 @@ yarn next:build
 yarn hardhat:account:import
 yarn hardhat:deploy --network hederaTestnet
 yarn hardhat:smoke --network hederaTestnet      # end-to-end run with HashScan links
-yarn hardhat:verify -- PerpEngine testnet
+yarn hardhat:verify PerpEngine testnet
 ```
 
 `yarn hardhat:deploy` without `--network localhost` targets the in-process `hardhat` network, which does not emulate HTS. Always pass a network.

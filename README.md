@@ -66,6 +66,8 @@ The template is deployed and every flow below was run on Hedera testnet by `yarn
 | `TestUSD` (faucet, token treasury) | `0x19469abFD12c317753c942a6e4585EAe7EBC24ec` | [0.0.10854736](https://hashscan.io/testnet/contract/0.0.10854736) |
 | tUSD (HTS token) | `0x0000000000000000000000000000000000a5a153` | [0.0.10854739](https://hashscan.io/testnet/token/0.0.10854739) |
 
+Both contracts are source-verified, so HashScan shows their code and lets you call them from the browser.
+
 | Step | Hedera service | Transaction |
 | --- | --- | --- |
 | Create the tUSD token from Solidity | Token Service | [0x7af3c9c9…](https://hashscan.io/testnet/transaction/0x7af3c9c986afa5d96b6c2f554447a4f39e4dfe8ba894fefeb4eede88bf5810ac) |
@@ -431,11 +433,11 @@ A push oracle updates when the price moves by its deviation threshold or when it
    yarn hardhat:smoke --network hederaTestnet
    ```
 
-5. Verify the contracts on HashScan (optional).
+5. Verify the contracts on HashScan (optional). With npm, put `--` before the contract name.
 
    ```bash
-   yarn hardhat:verify -- PerpEngine testnet
-   yarn hardhat:verify -- TestUSD testnet
+   yarn hardhat:verify PerpEngine testnet
+   yarn hardhat:verify TestUSD testnet
    ```
 
 The deploy scripts are safe to run again. They skip a token that already exists, markets that are already listed and a pool that already has liquidity.
@@ -494,7 +496,7 @@ tinyperp/
 | `yarn hardhat:set-price --market HBAR/USD --price 0.12` | Moves a mock price on the local chain. |
 | `yarn hardhat:test` | Runs the test suite. |
 | `yarn hardhat:compile` | Compiles the contracts. |
-| `yarn hardhat:verify -- <Contract> testnet` | Verifies a contract through Sourcify. |
+| `yarn hardhat:verify <Contract> testnet` | Verifies a contract through Sourcify, so HashScan shows its source. |
 | `yarn hardhat:account:generate` / `:import` / `hardhat:account` | Manages the deployer key. |
 | `yarn next:dev` | Starts the frontend in development mode. |
 | `yarn next:build` | Builds the frontend. |
