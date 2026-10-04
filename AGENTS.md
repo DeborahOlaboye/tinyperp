@@ -1,6 +1,6 @@
 # Agent instructions
 
-Briefing for coding agents working in this repository (Cursor, Claude Code, Codex). Claude Code loads it through `CLAUDE.md`. `README.md` is the full reference for humans; this file is what you need to change the code safely.
+Briefing for coding agents working in this repository. `README.md` is the full reference for humans; this file is what you need to change the code safely.
 
 ## What this is
 

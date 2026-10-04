@@ -501,7 +501,7 @@ tinyperp/
 
 ## Building with an AI agent
 
-`AGENTS.md` briefs coding agents on this repository: where things are, which commands to run, the invariants that must hold, and the Hedera details above. Claude Code loads it through `CLAUDE.md`; Cursor and Codex read it directly.
+`AGENTS.md` briefs coding agents on this repository: where things are, which commands to run, the invariants that must hold, and the Hedera details above. Agents that follow the AGENTS.md convention read it automatically.
 
 Scaffold-HBAR also installs [Hedera Skills](https://github.com/hedera-dev/hedera-skills), which give an agent accurate context on Hedera's system contracts and native services.
 
