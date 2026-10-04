@@ -28,17 +28,19 @@ const hederaLocalFork = {
   },
 } as const satisfies chains.Chain;
 
-const targetNetworks = [hederaTestnet, hederaMainnet, hederaLocalFork] as const satisfies readonly [
-  chains.Chain,
-  ...chains.Chain[],
-];
+// The local fork is only offered while developing, so a deployed app lists real networks only.
+const targetNetworks: readonly [typeof hederaTestnet, typeof hederaMainnet, ...chains.Chain[]] =
+  process.env.NODE_ENV === "development"
+    ? [hederaTestnet, hederaMainnet, hederaLocalFork]
+    : [hederaTestnet, hederaMainnet];
 
 const scaffoldConfig = {
   targetNetworks,
 
   pollingInterval: 10000,
 
-  enableBurnerWallet: true,
+  // Off, so the app starts at "Connect wallet" instead of connecting a throwaway account with no funds.
+  enableBurnerWallet: false,
 
   rpcOverrides: {
     [chains.hedera.id]: process.env.NEXT_PUBLIC_HEDERA_MAINNET_RPC_URL || "https://mainnet.hashio.io/api",
