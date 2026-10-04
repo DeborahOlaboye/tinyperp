@@ -2,8 +2,8 @@ import type { HardhatRuntimeEnvironment } from "hardhat/types";
 import type { DeployFunction } from "hardhat-deploy/types";
 
 import { getDeployGasPrice } from "../utils/getDeployGasPrice";
-import type { TestUSD } from "../typechain-types";
-import { ENGINE_CONFIG, getNetworkConfig } from "../utils/tinyperpConfig";
+import type { PerpEngine, TestUSD } from "../typechain-types";
+import { ENGINE_CONFIG, getNetworkConfig, isLocalNetwork } from "../utils/tinyperpConfig";
 
 /**
  * Deploys the engine against the collateral token and the network's oracles. Local networks have no
@@ -24,7 +24,7 @@ const deployPerpEngine: DeployFunction = async function (hre: HardhatRuntimeEnvi
     supra = mock.address;
   }
 
-  await deploy("PerpEngine", {
+  const deployment = await deploy("PerpEngine", {
     from: deployer,
     args: [
       deployer,
@@ -37,6 +37,15 @@ const deployPerpEngine: DeployFunction = async function (hre: HardhatRuntimeEnvi
     gasLimit: "6000000",
     gasPrice,
   });
+
+  // The constructor already asks HTS to associate the engine with the collateral token. On a live network,
+  // repeat the request in its own transaction so a deployment never ends up unable to hold collateral.
+  // The call cannot fail: an engine that is already associated simply stays that way.
+  if (deployment.newlyDeployed && !isLocalNetwork(hre.network.name)) {
+    const engine = await hre.ethers.getContract<PerpEngine>("PerpEngine", deployer);
+    await (await engine.associateCollateral({ gasLimit: 1_500_000, gasPrice })).wait();
+    console.log("Associated the engine with the collateral token");
+  }
 };
 
 deployPerpEngine.tags = ["PerpEngine"];
