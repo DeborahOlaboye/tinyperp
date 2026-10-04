@@ -21,6 +21,7 @@ const baseConfig = {
   minDuration: 60,
   maxDuration: 7 * DAY,
   autoSettleGasLimit: 1_000_000,
+  scheduleCallGas: 1_500_000,
   minCollateral: usd("1"),
   autoSettleFee: AUTO_SETTLE_FEE,
 };
@@ -463,6 +464,34 @@ describe("PerpEngine", function () {
       await expect(tx).to.emit(engine, "AutoSettleSkipped").withArgs(positionId);
       await expect(tx).to.changeEtherBalance(engine, 0n);
       expect((await engine.getPosition(positionId)).schedule).to.equal(ethers.ZeroAddress);
+    });
+
+    it("opens the position without booking when the network has no room at the expiry second", async function () {
+      const ctx = await loadFixture(cleanFixture);
+      const { engine, scheduleService, trader } = ctx;
+      await scheduleService.setNoCapacity(true);
+
+      const positionId = await engine.nextPositionId();
+      const tx = engine
+        .connect(trader)
+        .openPosition(0, true, usd("100"), 5, DAY, ethers.MaxUint256, true, { value: AUTO_SETTLE_FEE });
+      await expect(tx).to.emit(engine, "AutoSettleSkipped").withArgs(positionId);
+      await expect(tx).to.changeEtherBalance(engine, 0n);
+      expect(await scheduleService.scheduleCount()).to.equal(0n);
+    });
+
+    it("refuses an auto-settle open that cannot afford to book the schedule", async function () {
+      const { engine, trader } = await loadFixture(cleanFixture);
+
+      // Booking forwards 1.5 million gas and keeps 400,000 for the rest of the open.
+      await expect(
+        engine.connect(trader).openPosition(0, true, usd("100"), 5, DAY, ethers.MaxUint256, true, {
+          value: AUTO_SETTLE_FEE,
+          gasLimit: 1_200_000,
+        }),
+      )
+        .to.be.revertedWithCustomError(engine, "AutoSettleNeedsMoreGas")
+        .withArgs(1_900_000);
     });
 
     it("requires the fee up front and returns anything paid beyond it", async function () {

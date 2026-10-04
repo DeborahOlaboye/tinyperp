@@ -19,6 +19,7 @@ contract MockScheduleService is IHederaScheduleService {
     uint160 public scheduleCount;
     bool public rejectSchedules;
     bool public rejectDeletes;
+    bool public noCapacity;
     mapping(address schedule => ScheduledCall) public scheduled;
 
     function setRejectSchedules(bool reject) external {
@@ -27,6 +28,10 @@ contract MockScheduleService is IHederaScheduleService {
 
     function setRejectDeletes(bool reject) external {
         rejectDeletes = reject;
+    }
+
+    function setNoCapacity(bool none) external {
+        noCapacity = none;
     }
 
     function scheduleCall(
@@ -43,8 +48,8 @@ contract MockScheduleService is IHederaScheduleService {
         return (SUCCESS, scheduleAddress);
     }
 
-    function hasScheduleCapacity(uint256, uint256) external pure override returns (bool) {
-        return true;
+    function hasScheduleCapacity(uint256, uint256) external view override returns (bool) {
+        return !noCapacity;
     }
 
     function deleteSchedule(address scheduleAddress) external override returns (int64 responseCode) {

@@ -50,6 +50,8 @@ export const ENGINE_CONFIG = {
   minDuration: 2 * 60,
   maxDuration: 7 * DAY,
   autoSettleGasLimit: 500_000,
+  // scheduleCall used 1,409,649 gas on Hedera testnet (measured 2026-10-04). Forward a little more.
+  scheduleCallGas: 1_500_000,
   minCollateral: ethers.parseUnits("1", 6),
 };
 

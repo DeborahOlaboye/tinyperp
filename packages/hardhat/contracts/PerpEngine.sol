@@ -38,6 +38,8 @@ contract PerpEngine is Ownable, ReentrancyGuard {
     /// @param minDuration Shortest position term, in seconds.
     /// @param maxDuration Longest position term, in seconds.
     /// @param autoSettleGasLimit Gas limit of the scheduled settlement call. Zero turns scheduling off.
+    /// @param scheduleCallGas Gas forwarded to the Schedule Service to book a settlement. Booking costs about
+    ///        1.41 million gas on Hedera.
     /// @param minCollateral Smallest collateral accepted at open.
     /// @param autoSettleFee Native amount that prepays a scheduled settlement, in the unit of `msg.value`
     ///        (tinybars on Hedera).
@@ -50,6 +52,7 @@ contract PerpEngine is Ownable, ReentrancyGuard {
         uint32 minDuration;
         uint32 maxDuration;
         uint32 autoSettleGasLimit;
+        uint32 scheduleCallGas;
         uint256 minCollateral;
         uint256 autoSettleFee;
     }
@@ -98,6 +101,10 @@ contract PerpEngine is Ownable, ReentrancyGuard {
     address internal constant HSS = address(0x16b);
     int64 internal constant HEDERA_SUCCESS = 22;
     uint256 internal constant TOKEN_ALREADY_ASSOCIATED = 194;
+    /// @dev Gas an open still needs after booking its settlement: storing the position and pulling collateral.
+    uint256 internal constant GAS_RESERVED_AFTER_SCHEDULING = 400_000;
+    uint256 internal constant SCHEDULE_CAPACITY_GAS = 50_000;
+    uint256 internal constant DELETE_SCHEDULE_GAS = 300_000;
 
     IERC20 public immutable collateral;
     Config public config;
@@ -169,6 +176,7 @@ contract PerpEngine is Ownable, ReentrancyGuard {
     error NotLiquidatable();
     error NotExpired();
     error AutoSettleFeeTooLow(uint256 required);
+    error AutoSettleNeedsMoreGas(uint256 required);
     error NativeTransferFailed();
 
     constructor(
@@ -539,8 +547,13 @@ contract PerpEngine is Ownable, ReentrancyGuard {
         totalMargin += margin;
     }
 
-    /// @dev Books a scheduled `settleExpired` call. Scheduling is best effort: on any failure the position
-    ///      still opens, the fee is not charged, and anyone can settle it by hand after expiry.
+    /// @dev Books a scheduled `settleExpired` call. Scheduling is best effort: when the network has no room at
+    ///      the expiry second, or the Schedule Service declines, the position still opens, the fee is not
+    ///      charged, and anyone can settle it by hand after expiry.
+    ///
+    ///      The one hard failure is gas. `scheduleCall` burns all the gas it is given when that is too little,
+    ///      which would take the whole transaction down with an opaque error. So the engine forwards a fixed
+    ///      amount and reverts early, with the number, when the transaction cannot afford it.
     function _prepaySettlement(
         uint256 positionId,
         uint256 expiresAt,
@@ -550,25 +563,42 @@ contract PerpEngine is Ownable, ReentrancyGuard {
         if (!autoSettle) return (address(0), 0);
         if (msg.value < cfg.autoSettleFee) revert AutoSettleFeeTooLow(cfg.autoSettleFee);
 
-        if (cfg.autoSettleGasLimit != 0) {
-            (bool ok, bytes memory ret) = HSS.call(
-                abi.encodeCall(
-                    IHederaScheduleService.scheduleCall,
-                    (
-                        address(this),
-                        expiresAt,
-                        cfg.autoSettleGasLimit,
-                        0,
-                        abi.encodeCall(this.settleExpired, (positionId))
-                    )
-                )
-            );
-            if (ok && ret.length == 64) {
-                (int64 responseCode, address created) = abi.decode(ret, (int64, address));
-                if (responseCode == HEDERA_SUCCESS && created != address(0)) return (created, cfg.autoSettleFee);
-            }
+        if (cfg.autoSettleGasLimit != 0 && _hasScheduleCapacity(expiresAt, cfg.autoSettleGasLimit)) {
+            uint256 required = uint256(cfg.scheduleCallGas) + GAS_RESERVED_AFTER_SCHEDULING;
+            if (gasleft() < required) revert AutoSettleNeedsMoreGas(required);
+
+            schedule = _bookSettlement(positionId, expiresAt, cfg.autoSettleGasLimit, cfg.scheduleCallGas);
+            if (schedule != address(0)) return (schedule, cfg.autoSettleFee);
         }
         emit AutoSettleSkipped(positionId);
+    }
+
+    /// @dev Asks the Schedule Service to call `settleExpired(positionId)` at `expiresAt`. Returns the schedule
+    ///      address, or zero when the service declines.
+    function _bookSettlement(
+        uint256 positionId,
+        uint256 expiresAt,
+        uint256 settleGasLimit,
+        uint256 bookingGas
+    ) private returns (address) {
+        bytes memory booking = abi.encodeCall(
+            IHederaScheduleService.scheduleCall,
+            (address(this), expiresAt, settleGasLimit, 0, abi.encodeCall(this.settleExpired, (positionId)))
+        );
+        (bool ok, bytes memory ret) = HSS.call{ gas: bookingGas }(booking);
+        if (!ok || ret.length != 64) return address(0);
+
+        (int64 responseCode, address created) = abi.decode(ret, (int64, address));
+        return responseCode == HEDERA_SUCCESS ? created : address(0);
+    }
+
+    /// @dev Whether the network can take a scheduled call of `gasLimit` at `expirySecond`. False when there is
+    ///      no Schedule Service at all, as on a local chain.
+    function _hasScheduleCapacity(uint256 expirySecond, uint256 gasLimit) private view returns (bool) {
+        (bool ok, bytes memory ret) = HSS.staticcall{ gas: SCHEDULE_CAPACITY_GAS }(
+            abi.encodeCall(IHederaScheduleService.hasScheduleCapacity, (expirySecond, gasLimit))
+        );
+        return ok && ret.length == 32 && abi.decode(ret, (bool));
     }
 
     /// @dev When a position settles before its schedule runs, cancel the schedule and return the prepaid fee.
@@ -576,7 +606,7 @@ contract PerpEngine is Ownable, ReentrancyGuard {
     function _releaseSettleDeposit(Position memory position) private {
         if (position.schedule == address(0) || block.timestamp >= position.expiresAt) return;
 
-        (bool ok, bytes memory ret) = HSS.call(
+        (bool ok, bytes memory ret) = HSS.call{ gas: DELETE_SCHEDULE_GAS }(
             abi.encodeCall(IHederaScheduleService.deleteSchedule, (position.schedule))
         );
         if (ok && ret.length == 32 && abi.decode(ret, (int64)) == HEDERA_SUCCESS) {

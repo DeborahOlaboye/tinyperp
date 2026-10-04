@@ -19,6 +19,7 @@ const config = {
   minDuration: 60,
   maxDuration: 7 * DAY,
   autoSettleGasLimit: 0,
+  scheduleCallGas: 0,
   minCollateral: 1_000_000n,
   autoSettleFee: 0n,
 };
