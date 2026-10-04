@@ -24,6 +24,7 @@
     "hardhat:format": "yarn workspace @sh/hardhat format",
     "hardhat:lint": "yarn workspace @sh/hardhat lint",
     "hardhat:lint-staged": "yarn workspace @sh/hardhat lint-staged",
+    "hardhat:set-price": "yarn workspace @sh/hardhat set-price",
     "hardhat:smoke": "yarn workspace @sh/hardhat smoke",
     "hardhat:test": "yarn workspace @sh/hardhat test",
     "hardhat:verify": "yarn workspace @sh/hardhat verify:contract",

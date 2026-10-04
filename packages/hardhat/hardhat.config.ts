@@ -75,6 +75,31 @@ const config: HardhatUserConfig = {
   },
 };
 
+// Moves a market's price on a local chain, on the mock Chainlink feed and the mock Supra feed together.
+// Usage: yarn hardhat:set-price --market HBAR/USD --price 0.12
+task("set-price", "Sets a mock market price on a local network")
+  .addParam("market", "Market symbol, for example HBAR/USD")
+  .addParam("price", "New price in USD, for example 0.12")
+  .setAction(async ({ market, price }: { market: string; price: string }, hre) => {
+    const { deployer } = await hre.getNamedAccounts();
+    const engine = await hre.ethers.getContract("PerpEngine", deployer);
+    const feedDeployment = await hre.deployments.getOrNull(`MockAggregator_${market.replace("/", "_")}`);
+    if (!feedDeployment) throw new Error(`No mock feed for ${market}. Mock feeds exist only on local networks.`);
+
+    const feed = await hre.ethers.getContractAt("MockAggregator", feedDeployment.address);
+    await (await feed.setAnswer(hre.ethers.parseUnits(price, 8))).wait();
+
+    const count = Number(await engine.getFunction("marketCount")());
+    for (let id = 0; id < count; id++) {
+      const listed = await engine.getFunction("getMarket")(id);
+      if (listed.symbol === market && listed.crossCheck) {
+        const supra = await hre.ethers.getContract("MockSupraFeed", deployer);
+        await (await supra.getFunction("setValue")(listed.supraPairIndex, hre.ethers.parseUnits(price, 18))).wait();
+      }
+    }
+    console.log(`${market} is now ${price}`);
+  });
+
 // Extend the deploy task to also generate TypeScript ABIs after deployment.
 task("deploy").setAction(async (args, hre, runSuper) => {
   await runSuper(args);

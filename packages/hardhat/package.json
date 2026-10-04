@@ -16,6 +16,7 @@
     "format": "prettier --write './**/*.(ts|sol)'",
     "lint": "eslint",
     "lint-staged": "eslint",
+    "set-price": "hardhat set-price --network localhost",
     "smoke": "TINYPERP_SMOKE=true ts-node scripts/runHardhatDeployWithPK.ts --tags Smoke",
     "test": "HEDERA_FORKING=true REPORT_GAS=true hardhat test",
     "verify:contract": "ts-node scripts/verifySourcify.ts"
