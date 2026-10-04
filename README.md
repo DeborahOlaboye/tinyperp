@@ -120,6 +120,8 @@ yarn hardhat:deploy --network localhost
 yarn next:dev
 ```
 
+The app has no built-in test wallet. To trade on the local chain, add the network to your wallet (RPC `http://127.0.0.1:8545`, chain id `31337`) and import one of the accounts `yarn hardhat:chain` prints. The local network is only offered in development; a production build lists Hedera testnet and mainnet.
+
 Run the tests:
 
 ```bash
