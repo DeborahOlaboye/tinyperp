@@ -14,6 +14,7 @@ Tinyperp is a starting point for derivatives on Hedera: perpetual-style trading,
 
 - [What you get](#what-you-get)
 - [Why these integrations](#why-these-integrations)
+- [Live on Hedera testnet](#live-on-hedera-testnet)
 - [Quick start](#quick-start)
 - [How it works](#how-it-works)
 - [A worked example](#a-worked-example)
@@ -42,7 +43,7 @@ Tinyperp is a starting point for derivatives on Hedera: perpetual-style trading,
 | Mocks | Chainlink feed, Supra feed, HTS-like token and Schedule Service, for local chains and tests. |
 | Deploy scripts | One command deploys everything, lists three markets and seeds the pool. |
 | Smoke test | One command runs the full flow on a live network and prints a HashScan link per step. |
-| Tests | 39 tests: engine logic, the HTS system contract, and the live Chainlink and Supra contracts. |
+| Tests | 41 tests: engine logic, the HTS system contract, and the live Chainlink and Supra contracts. |
 | Frontend | The Scaffold-HBAR Next.js app: wallet connection and a Debug Contracts page generated from the ABIs. |
 
 Markets listed by default on testnet: HBAR/USD, BTC/USD and ETH/USD, each up to 10x.
@@ -54,6 +55,39 @@ Markets listed by default on testnet: HBAR/USD, BTC/USD and ETH/USD, each up to 
 **Supra is a circuit breaker.** A push oracle can lag or, in the worst case, report a bad value. For any market that opts in, the engine compares Chainlink against the Supra push oracle. While the two disagree by more than a set tolerance, the market stops: no opens, closes or liquidations at a price nobody can vouch for.
 
 **Push oracles are what make keeperless settlement possible.** Because the price is already on chain, a settlement call needs no off-chain data. That lets the Hedera Schedule Service call `settleExpired` at the end of a position's term with nothing but the position id. A pull oracle would need someone to fetch and attach a signed price, which is a keeper by another name.
+
+## Live on Hedera testnet
+
+The template is deployed and every flow below was run on Hedera testnet by `yarn hardhat:smoke`. Each link is a real transaction.
+
+| Contract | Address | HashScan |
+| --- | --- | --- |
+| `PerpEngine` | `0x2b195f8FD9F8EA31B2256048c965e095c175C86a` | [0.0.10854971](https://hashscan.io/testnet/contract/0.0.10854971) |
+| `TestUSD` (faucet, token treasury) | `0x19469abFD12c317753c942a6e4585EAe7EBC24ec` | [0.0.10854736](https://hashscan.io/testnet/contract/0.0.10854736) |
+| tUSD (HTS token) | `0x0000000000000000000000000000000000a5a153` | [0.0.10854739](https://hashscan.io/testnet/token/0.0.10854739) |
+
+| Step | Hedera service | Transaction |
+| --- | --- | --- |
+| Create the tUSD token from Solidity | Token Service | [0x7af3c9c9…](https://hashscan.io/testnet/transaction/0x7af3c9c986afa5d96b6c2f554447a4f39e4dfe8ba894fefeb4eede88bf5810ac) |
+| Faucet mints and transfers tUSD | Token Service | [0xf2aceb3b…](https://hashscan.io/testnet/transaction/0xf2aceb3b889f692acbe2f76fdbaa2d4c00332190f7db881c31863cce41bebb3c) |
+| Open a 5x long on HBAR/USD at the Chainlink price, cross-checked against Supra | Smart contracts | [0x49ad0c87…](https://hashscan.io/testnet/transaction/0x49ad0c87d3dae17edf2fd1af5cadc1e50a5471d4a8aa38358d08b5f76a73bc90) |
+| Close it | Smart contracts | [0x59edd2af…](https://hashscan.io/testnet/transaction/0x59edd2af8c16e237a9b744aa288e482651e00a87f6510bc76bc2e28ec304f988) |
+| Open a position and book its settlement | Schedule Service | [0x627e6039…](https://hashscan.io/testnet/transaction/0x627e6039f72926efcce04cea4525e6320c850972ded1128aa67d3ce294589e4f) |
+| Close it early: the engine deletes the schedule and refunds the 0.5 HBAR fee | Schedule Service | [0xbcfe443b…](https://hashscan.io/testnet/transaction/0xbcfe443b231cd0008aa057133fee1982f9ef1b7535bab8a58b2ef5e30c1bce4f) |
+| Open a 3x short with a two minute term and book its settlement | Schedule Service | [0x6b2c5115…](https://hashscan.io/testnet/transaction/0x6b2c51159438edfbcb3f7819fbf377702103073b9ef44efdda0021c9d7335cfd) |
+| **The network settles that position itself, with no keeper** | Schedule Service | [0x5b174ee9…](https://hashscan.io/testnet/transaction/0x5b174ee924ae7517392b19a5abf6b5b9c47f4fd4237b6186b8432c49f0fe67ab) |
+
+The last transaction was not sent by anyone. Schedule [0.0.10854993](https://testnet.mirrornode.hedera.com/api/v1/schedules/0.0.10854993) executed it five seconds after the position expired, paid for by the engine from the trader's prepaid fee.
+
+Gas measured in that run, at the testnet price of 87 tinybars per gas:
+
+| Action | Gas used | Fee charged |
+| --- | --- | --- |
+| Open a position | 339,068 | 0.28 HBAR |
+| Close a position | 132,218 | 0.11 HBAR |
+| Open with a scheduled settlement | 1,797,076 | 1.49 HBAR |
+| Close early and delete the schedule | 202,471 | 0.17 HBAR |
+| Scheduled settlement, run by the network | 136,773 | 0.11 HBAR |
 
 ## Quick start
 
@@ -158,10 +192,13 @@ Perpetual exchanges use a funding rate to stop one side from holding pool liquid
 When opening, a trader can set `autoSettle` and send `config.autoSettleFee` in HBAR. The engine then asks the Hedera Schedule Service to call `settleExpired(positionId)` at the expiry second. The network executes that call itself. No bot, no cron job, no server.
 
 - The fee prepays the gas of the scheduled call. The engine is the payer of the schedule, so it holds the fee until then.
+- The call is booked five seconds after expiry, not at it. [Hedera details](#hedera-details-that-will-bite-you) explains why.
 - If the trader closes early or is liquidated, the engine deletes the schedule and refunds the fee.
-- If the Schedule Service cannot book the call, the position still opens, the fee is returned, and `AutoSettleSkipped` is emitted. Anyone can settle it by hand after expiry.
+- If the network has no room at that second, or the Schedule Service declines, the position still opens, the fee is returned, and `AutoSettleSkipped` is emitted. Anyone can settle it by hand after expiry.
 
 Scheduling is best effort by design. Trading never depends on it.
+
+It is not free. Booking a schedule costs about 1.41 million gas, so an open with `autoSettle` used 1.8 million gas on testnet against 0.34 million without. Send at least 2.2 million gas with such a transaction. If the transaction cannot afford the booking, the engine reverts with `AutoSettleNeedsMoreGas` before spending anything on it.
 
 ### Payouts that cannot be delivered
 
@@ -262,6 +299,10 @@ These are the differences from other EVM chains that this template had to handle
 
 **The contract that schedules a call pays for it.** The engine must hold enough HBAR to cover `autoSettleGasLimit` when the network runs the call. That is what `autoSettleFee` is for. The owner can top up the budget by sending HBAR to the engine, and withdraw surplus with `sweepNative`.
 
+**Booking a schedule costs about 1.41 million gas, and running out is fatal.** `scheduleCall` never reverts on a business failure, but when it is given too little gas it burns all of it, and the rest of the transaction then dies with `INSUFFICIENT_GAS`. The engine forwards a fixed `config.scheduleCallGas`, checks `hasScheduleCapacity` first, and reverts early with `AutoSettleNeedsMoreGas(required)` if the transaction cannot cover it.
+
+**`block.timestamp` can be earlier than the second a scheduled call runs in.** A Hedera block is two seconds long and its timestamp is that of its first transaction. A call the network executes at second T can therefore see `block.timestamp` equal to T − 1 or T − 2. A settlement booked exactly at expiry failed the engine's own "has it expired" check on testnet for this reason. The engine books it five seconds later (`SETTLE_DELAY`).
+
 **Local chains do not have the Schedule Service.** `yarn hardhat:chain` emulates the Token Service but not `0x16b`. Locally, `autoSettle` emits `AutoSettleSkipped` and positions are settled by hand. The unit tests install a mock at `0x16b` to cover the scheduling logic.
 
 ## Contract reference
@@ -346,8 +387,9 @@ Everything a deployment needs is in `packages/hardhat/utils/tinyperpConfig.ts`. 
 | `minDuration` | 120 | Shortest term, in seconds. |
 | `maxDuration` | 604800 | Longest term, in seconds (7 days). |
 | `autoSettleGasLimit` | 500000 | Gas limit of the scheduled settlement. Zero turns scheduling off. |
+| `scheduleCallGas` | 1500000 | Gas forwarded to the Schedule Service to book a settlement. Booking used 1,409,649 on testnet. |
 | `minCollateral` | 1 tUSD | Smallest collateral accepted. |
-| `autoSettleFee` | 0.5 HBAR on testnet | Prepayment for one scheduled settlement, in tinybars. |
+| `autoSettleFee` | 0.5 HBAR on testnet | Prepayment for one scheduled settlement, in tinybars. The settlement on testnet was charged 0.11 HBAR, so this can be lowered. What is not spent stays in the engine's budget. |
 
 The engine has no setters for these. They are fixed at deployment so that the rules a trader opened under cannot change while the position is open. To retune, redeploy.
 
@@ -367,7 +409,7 @@ A push oracle updates when the price moves by its deviation threshold or when it
 
 ## Deploy to Hedera testnet
 
-1. Get testnet HBAR. Create an ECDSA account at [portal.hedera.com](https://portal.hedera.com) and use the [faucet](https://portal.hedera.com/faucet). Keep about 50 HBAR in the account: 20 is sent to create the token and the rest covers gas.
+1. Get testnet HBAR. Create an ECDSA account at [portal.hedera.com](https://portal.hedera.com) and use the [faucet](https://portal.hedera.com/faucet). Keep about 40 HBAR in the account. A from-scratch deploy used about 27 HBAR in our run: 20 is sent with the token creation, of which the Token Service kept 11.7 and returned the rest to `TestUSD` (recover it with `sweepNative`). The smoke test uses about 5.
 
 2. Give Hardhat the key. It is encrypted with a password and stored in `packages/hardhat/.env`, which is ignored by Git.
 
@@ -383,7 +425,7 @@ A push oracle updates when the price moves by its deviation threshold or when it
 
    Addresses and ABIs are written to `packages/nextjs/contracts/deployedContracts.ts`, which the frontend reads.
 
-4. Run the smoke test. It takes tUSD from the faucet, opens and closes a position, then opens one with `autoSettle` and waits for the network to settle it. Every step prints a HashScan link.
+4. Run the smoke test. It takes tUSD from the faucet, opens and closes a position, opens one with `autoSettle` and closes it early to check the refund, then opens another with `autoSettle` and waits about three minutes for the network to settle it. Every step prints a HashScan link.
 
    ```bash
    yarn hardhat:smoke --network hederaTestnet
@@ -408,7 +450,7 @@ Tests run on a Hardhat network that forks Hedera testnet, so they need a network
 
 | File | What it covers |
 | --- | --- |
-| `test/PerpEngine.test.ts` | 33 tests on mocks: pool share maths, fees and spread, long and short PnL, the profit cap, liquidation and its reward split, undeliverable payouts, expiry, scheduling and its failure modes, every oracle guard path, and the solvency invariant after each scenario. |
+| `test/PerpEngine.test.ts` | 35 tests on mocks: pool share maths, fees and spread, long and short PnL, the profit cap, liquidation and its reward split, undeliverable payouts, expiry, scheduling and its failure modes, every oracle guard path, and the solvency invariant after each scenario. |
 | `test/TestUSD.test.ts` | 4 tests against the emulated HTS system contract: token creation, the faucet and its cooldown, owner-only minting. |
 | `test/LiveOracles.test.ts` | 2 tests against the real Chainlink feed and Supra oracle on the testnet fork. They prove the oracle reads against the live deployments, not only against mocks. |
 
@@ -482,7 +524,8 @@ tinyperp/
 - **No funding rate.** Terms are bounded by `maxDuration` instead.
 - **Fixed parameters.** There are no setters. Retuning means redeploying.
 - **A drained pool stops taking deposits.** If traders win everything in the pool while shares still exist, `previewDeposit` reverts with `PoolDepleted`. The profit cap and reservation make this very unlikely, but it is possible, and recovery means a new deployment.
-- **Scheduled settlement can fail.** If the oracle is stale or halted at the expiry second, the scheduled call reverts and the position waits for a manual `settleExpired`. The prepaid fee is spent either way.
+- **Scheduled settlement costs gas up front.** Booking adds about 1.46 million gas to the open, roughly 1.2 HBAR at the testnet gas price, on top of the prepaid fee. It suits positions large enough to justify it; small ones can be settled by hand.
+- **Scheduled settlement can fail.** If the oracle is stale or halted when the schedule runs, the scheduled call reverts and the position waits for a manual `settleExpired`. The prepaid fee is spent either way.
 - **Owner powers.** The owner can list markets, switch a market to close-only, and withdraw HBAR from the settlement budget. The owner cannot touch collateral, change parameters or move positions.
 
 ## Troubleshooting
@@ -494,6 +537,8 @@ tinyperp/
 | `HtsTransferFailed(184)` from the faucet | The caller is not associated with tUSD. | Call `associate()` on the token address, then `drip()` again. |
 | `InsufficientLiquidity` on open | The pool cannot reserve `margin * maxProfitMultiple`. | Add liquidity, or open a smaller position. |
 | `AutoSettleFeeTooLow` | `msg.value` is below `config.autoSettleFee`. | Send the fee in weibars: tinybars × 10^10. |
+| `AutoSettleNeedsMoreGas` | The transaction's gas limit cannot cover booking the schedule. | Send at least 2.2 million gas with an `autoSettle` open. |
+| `INSUFFICIENT_GAS` on an `autoSettle` open | `config.scheduleCallGas` is below what the Schedule Service now charges. | Redeploy with a higher `scheduleCallGas`. |
 | `AutoSettleSkipped` event | The Schedule Service did not book the call. | Expected on local chains. Settle with `settleExpired` after expiry. |
 | `HtsCreateFailed` on deploy | The creation fee was too low. | Raise `tokenCreationValue` in `tinyperpConfig.ts`. |
 | Deploy says no deployer account | No key has been imported. | Run `yarn hardhat:account:import`. |
