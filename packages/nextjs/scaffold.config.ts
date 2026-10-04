@@ -8,8 +8,15 @@ export type ScaffoldConfig = {
   walletConnectProjectId: string;
 };
 
+// Multicall3 is deployed at its usual address on Hedera mainnet and testnet, but viem's chain definitions do
+// not list it. Declaring it lets wagmi batch contract reads into one request.
+const contracts = { multicall3: { address: "0xcA11bde05977b3631167028862bE2a173976CA11" } } as const;
+const hederaTestnet = { ...chains.hederaTestnet, contracts } as const satisfies chains.Chain;
+const hederaMainnet = { ...chains.hedera, contracts } as const satisfies chains.Chain;
+
 const hederaLocalFork = {
   ...chains.hardhat,
+  contracts, // the local chain forks testnet, so the same deployment is there
   name: "Hedera Local Fork",
   nativeCurrency: {
     name: "HBAR",
@@ -21,7 +28,7 @@ const hederaLocalFork = {
   },
 } as const satisfies chains.Chain;
 
-const targetNetworks = [chains.hederaTestnet, chains.hedera, hederaLocalFork] as const satisfies readonly [
+const targetNetworks = [hederaTestnet, hederaMainnet, hederaLocalFork] as const satisfies readonly [
   chains.Chain,
   ...chains.Chain[],
 ];
