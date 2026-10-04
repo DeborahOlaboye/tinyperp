@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 pragma solidity ^0.8.0;
 
-/// Minimal interface for the HTS precompile at 0x167 (create fungible token + mint).
+/// Minimal interface for the HTS precompile at 0x167 (create fungible token, mint, transfer).
 /// Struct layout matches the official IHederaTokenService for ABI compatibility.
 interface IHederaTokenService {
     struct Expiry {
@@ -52,4 +52,13 @@ interface IHederaTokenService {
         int64 amount,
         bytes[] memory metadata
     ) external returns (int64 responseCode, int64 newTotalSupply, int64[] memory serialNumbers);
+
+    /// Transfers a fungible token from `sender` to `recipient`.
+    /// @return responseCode SUCCESS is 22. 184 means the recipient is not associated with the token.
+    function transferToken(
+        address token,
+        address sender,
+        address recipient,
+        int64 amount
+    ) external returns (int64 responseCode);
 }
