@@ -38,6 +38,9 @@ jobs:
           timeout 60s bash -c 'until curl -s -X POST http://127.0.0.1:8545 -H "Content-Type: application/json" --data "{\"jsonrpc\":\"2.0\",\"method\":\"web3_clientVersion\",\"params\":[],\"id\":1}" >/dev/null; do sleep 2; done'
           yarn hardhat:deploy --network localhost
 
+      - name: Run hardhat tests
+        run: yarn hardhat:test
+
       - name: Run nextjs lint
         run: yarn next:lint --max-warnings=0
 
