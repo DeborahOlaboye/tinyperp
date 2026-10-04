@@ -8,8 +8,9 @@ import { HEDERA_CHAIN_IDS, toRpcValue } from "../utils/tinyperpConfig";
 const sleep = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
 
 /**
- * End-to-end check against a deployed engine: takes tUSD from the faucet, opens and closes a position, then
- * opens one that the Hedera Schedule Service settles on its own. Prints a HashScan link for every step.
+ * End-to-end check against a deployed engine: takes tUSD from the faucet, opens and closes a position, opens
+ * one with a scheduled settlement and closes it early, then opens one that the Hedera Schedule Service
+ * settles on its own. Prints a HashScan link for every step.
  *
  * Runs only through `yarn hardhat:smoke --network hederaTestnet`, never as part of a normal deploy.
  */
@@ -41,7 +42,7 @@ const smoke: DeployFunction = async function (hre: HardhatRuntimeEnvironment) {
   }
   await step(
     "Approve the engine to pull tUSD",
-    token.approve(await engine.getAddress(), collateralAmount * 2n, overrides),
+    token.approve(await engine.getAddress(), collateralAmount * 3n, overrides),
   );
 
   const price = await engine.markPrice(0);
@@ -54,21 +55,49 @@ const smoke: DeployFunction = async function (hre: HardhatRuntimeEnvironment) {
   );
   await step(`Close position ${closedId}`, engine.closePosition(closedId, overrides));
 
+  // Booking a schedule costs about 1.41 million gas on Hedera, on top of the open itself.
+  const autoSettleOverrides = {
+    ...overrides,
+    gasLimit: 2_300_000,
+    value: toRpcValue(config.autoSettleFee, chainId),
+  };
+
+  const cancelledId = await engine.nextPositionId();
+  await step(
+    `Open position ${cancelledId}: long HBAR/USD, 100 tUSD at 2x, with a scheduled settlement`,
+    engine.openPosition(
+      0,
+      true,
+      collateralAmount,
+      2,
+      config.maxDuration,
+      hre.ethers.MaxUint256,
+      true,
+      autoSettleOverrides,
+    ),
+  );
+  const cancelled = await engine.getPosition(cancelledId);
+  if (cancelled.schedule === hre.ethers.ZeroAddress) {
+    console.log("No schedule was booked (this network has no Schedule Service). Settle positions by hand.");
+    await step(`Close position ${cancelledId}`, engine.closePosition(cancelledId, overrides));
+    return;
+  }
+  const budgetBefore = await hre.ethers.provider.getBalance(await engine.getAddress());
+  await step(
+    `Close position ${cancelledId} early: the engine deletes schedule ${cancelled.schedule}`,
+    engine.closePosition(cancelledId, overrides),
+  );
+  const refunded = budgetBefore - (await hre.ethers.provider.getBalance(await engine.getAddress()));
+  console.log(`  Prepaid settlement fee refunded to the trader: ${hre.ethers.formatEther(refunded)} HBAR`);
+
   const scheduledId = await engine.nextPositionId();
   await step(
     `Open position ${scheduledId}: short HBAR/USD, 100 tUSD at 3x, settled by the Schedule Service`,
-    engine.openPosition(0, false, collateralAmount, 3, config.minDuration, 0, true, {
-      ...overrides,
-      value: toRpcValue(config.autoSettleFee, chainId),
-    }),
+    engine.openPosition(0, false, collateralAmount, 3, config.minDuration, 0, true, autoSettleOverrides),
   );
   const { schedule, expiresAt } = await engine.getPosition(scheduledId);
-  if (schedule === hre.ethers.ZeroAddress) {
-    console.log("No schedule was booked (this network has no Schedule Service). Settle the position by hand.");
-    return;
-  }
   console.log(
-    `Schedule ${schedule} will call settleExpired(${scheduledId}) at ${new Date(Number(expiresAt) * 1000).toISOString()}`,
+    `Schedule ${schedule} will call settleExpired(${scheduledId}) just after ${new Date(Number(expiresAt) * 1000).toISOString()}`,
   );
 
   const deadline = Number(expiresAt) * 1000 + 90_000;
