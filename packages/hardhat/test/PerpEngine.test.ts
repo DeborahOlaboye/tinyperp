@@ -418,7 +418,8 @@ describe("PerpEngine", function () {
       const position = await engine.getPosition(positionId);
       const booked = await scheduleService.scheduled(position.schedule);
       expect(booked.to).to.equal(await engine.getAddress());
-      expect(booked.expirySecond).to.equal(position.expiresAt);
+      // Booked a few seconds after expiry: on Hedera a block's timestamp can trail the scheduled second.
+      expect(booked.expirySecond).to.equal(position.expiresAt + 5n);
       expect(booked.callData).to.equal(engine.interface.encodeFunctionData("settleExpired", [positionId]));
       expect(position.settleDeposit).to.equal(AUTO_SETTLE_FEE);
       expect(await ethers.provider.getBalance(engine)).to.equal(AUTO_SETTLE_FEE);

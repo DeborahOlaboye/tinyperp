@@ -105,6 +105,10 @@ contract PerpEngine is Ownable, ReentrancyGuard {
     uint256 internal constant GAS_RESERVED_AFTER_SCHEDULING = 400_000;
     uint256 internal constant SCHEDULE_CAPACITY_GAS = 50_000;
     uint256 internal constant DELETE_SCHEDULE_GAS = 300_000;
+    /// @dev A Hedera block's timestamp is that of its first transaction and blocks last two seconds, so a call
+    ///      the network runs at second T can see a `block.timestamp` just before T. Booking the settlement a
+    ///      few seconds after expiry keeps it from failing the expiry check.
+    uint256 internal constant SETTLE_DELAY = 5;
 
     IERC20 public immutable collateral;
     Config public config;
@@ -563,27 +567,28 @@ contract PerpEngine is Ownable, ReentrancyGuard {
         if (!autoSettle) return (address(0), 0);
         if (msg.value < cfg.autoSettleFee) revert AutoSettleFeeTooLow(cfg.autoSettleFee);
 
-        if (cfg.autoSettleGasLimit != 0 && _hasScheduleCapacity(expiresAt, cfg.autoSettleGasLimit)) {
+        uint256 settleAt = expiresAt + SETTLE_DELAY;
+        if (cfg.autoSettleGasLimit != 0 && _hasScheduleCapacity(settleAt, cfg.autoSettleGasLimit)) {
             uint256 required = uint256(cfg.scheduleCallGas) + GAS_RESERVED_AFTER_SCHEDULING;
             if (gasleft() < required) revert AutoSettleNeedsMoreGas(required);
 
-            schedule = _bookSettlement(positionId, expiresAt, cfg.autoSettleGasLimit, cfg.scheduleCallGas);
+            schedule = _bookSettlement(positionId, settleAt, cfg.autoSettleGasLimit, cfg.scheduleCallGas);
             if (schedule != address(0)) return (schedule, cfg.autoSettleFee);
         }
         emit AutoSettleSkipped(positionId);
     }
 
-    /// @dev Asks the Schedule Service to call `settleExpired(positionId)` at `expiresAt`. Returns the schedule
+    /// @dev Asks the Schedule Service to call `settleExpired(positionId)` at `settleAt`. Returns the schedule
     ///      address, or zero when the service declines.
     function _bookSettlement(
         uint256 positionId,
-        uint256 expiresAt,
+        uint256 settleAt,
         uint256 settleGasLimit,
         uint256 bookingGas
     ) private returns (address) {
         bytes memory booking = abi.encodeCall(
             IHederaScheduleService.scheduleCall,
-            (address(this), expiresAt, settleGasLimit, 0, abi.encodeCall(this.settleExpired, (positionId)))
+            (address(this), settleAt, settleGasLimit, 0, abi.encodeCall(this.settleExpired, (positionId)))
         );
         (bool ok, bytes memory ret) = HSS.call{ gas: bookingGas }(booking);
         if (!ok || ret.length != 64) return address(0);
