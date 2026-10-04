@@ -66,7 +66,7 @@
               "command": "{run:hardhat:smoke} --network hederaTestnet"
             },
             {
-              "text": "README.md explains how the engine works and every parameter."
+              "text": "README.md explains how the engine works and every parameter. AGENTS.md briefs your coding agent."
             }
           ]
         }

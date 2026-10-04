@@ -29,6 +29,7 @@ Tinyperp is a starting point for derivatives on Hedera: perpetual-style trading,
 - [Extending the template](#extending-the-template)
 - [Limits and risks](#limits-and-risks)
 - [Troubleshooting](#troubleshooting)
+- [Building with an AI agent](#building-with-an-ai-agent)
 - [Licence](#licence)
 
 ## What you get
@@ -434,6 +435,7 @@ tinyperp/
 │   │   ├── utils/tinyperpConfig.ts     every tunable, per network
 │   │   └── hardhat.config.ts
 │   └── nextjs/                         Scaffold-HBAR frontend
+├── AGENTS.md                           briefing for AI coding agents
 ├── template.json                       Scaffold-HBAR template manifest
 ├── LICENCE
 └── README.md
@@ -496,6 +498,12 @@ tinyperp/
 | `HtsCreateFailed` on deploy | The creation fee was too low. | Raise `tokenCreationValue` in `tinyperpConfig.ts`. |
 | Deploy says no deployer account | No key has been imported. | Run `yarn hardhat:account:import`. |
 | Tests fail to start | The fork needs a network connection to Hedera testnet. | Check the connection, or set `HEDERA_RPC_URL`. |
+
+## Building with an AI agent
+
+`AGENTS.md` briefs coding agents on this repository: where things are, which commands to run, the invariants that must hold, and the Hedera details above. Claude Code loads it through `CLAUDE.md`; Cursor and Codex read it directly.
+
+Scaffold-HBAR also installs [Hedera Skills](https://github.com/hedera-dev/hedera-skills), which give an agent accurate context on Hedera's system contracts and native services.
 
 ## Licence
 
