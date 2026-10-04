@@ -1,0 +1,76 @@
+{
+  "name": "tinyperp",
+  "description": "Leveraged long and short positions on Hedera: Chainlink Data Feeds cross-checked against Supra, HTS collateral, and keeperless settlement through the Hedera Schedule Service.",
+  "version": "0.1.0",
+  "create-scaffold-hbar": {
+    "requirements": {
+      "node": ">=20.18.3"
+    },
+    "capabilities": {
+      "frontend": [
+        "nextjs-app"
+      ],
+      "solidityFramework": [
+        "hardhat"
+      ],
+      "packageManager": [
+        "yarn",
+        "npm"
+      ]
+    },
+    "defaults": {
+      "frontend": "nextjs-app",
+      "solidityFramework": "hardhat",
+      "packageManager": "yarn"
+    },
+    "outro": {
+      "sections": [
+        {
+          "title": "Run it locally",
+          "steps": [
+            {
+              "label": "Start a local chain that forks Hedera testnet",
+              "command": "{run:hardhat:chain}"
+            },
+            {
+              "label": "Deploy the engine, the tUSD token and three mock-priced markets",
+              "command": "{run:hardhat:deploy} --network localhost"
+            },
+            {
+              "label": "Start the frontend",
+              "command": "{run:next:dev}"
+            },
+            {
+              "label": "Run the tests",
+              "command": "{run:hardhat:test}"
+            }
+          ]
+        },
+        {
+          "title": "Run it on Hedera testnet with live Chainlink and Supra prices",
+          "steps": [
+            {
+              "label": "Fund an ECDSA testnet account",
+              "url": "https://portal.hedera.com/faucet"
+            },
+            {
+              "label": "Import its key",
+              "command": "{run:hardhat:account:import}"
+            },
+            {
+              "label": "Deploy",
+              "command": "{run:hardhat:deploy} --network hederaTestnet"
+            },
+            {
+              "label": "Open, close and auto-settle a position, with a HashScan link per step",
+              "command": "{run:hardhat:smoke} --network hederaTestnet"
+            },
+            {
+              "text": "README.md explains how the engine works and every parameter."
+            }
+          ]
+        }
+      ]
+    }
+  }
+}
