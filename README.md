@@ -16,6 +16,7 @@ Tinyperp is a starting point for derivatives on Hedera: perpetual-style trading,
 - [Why these integrations](#why-these-integrations)
 - [Live on Hedera testnet](#live-on-hedera-testnet)
 - [Quick start](#quick-start)
+- [The app](#the-app)
 - [How it works](#how-it-works)
 - [A worked example](#a-worked-example)
 - [Oracles](#oracles)
@@ -44,7 +45,7 @@ Tinyperp is a starting point for derivatives on Hedera: perpetual-style trading,
 | Deploy scripts | One command deploys everything, lists three markets and seeds the pool. |
 | Smoke test | One command runs the full flow on a live network and prints a HashScan link per step. |
 | Tests | 41 tests: engine logic, the HTS system contract, and the live Chainlink and Supra contracts. |
-| Frontend | The Scaffold-HBAR Next.js app: wallet connection and a Debug Contracts page generated from the ABIs. |
+| Frontend | A responsive Next.js app with eight screens: trade, positions, pool, liquidations, faucet, oracle health, claims and owner controls. It reads live from the engine and the oracles. |
 
 Markets listed by default on testnet: HBAR/USD, BTC/USD and ETH/USD, each up to 10x.
 
@@ -132,6 +133,36 @@ yarn hardhat:set-price --market HBAR/USD --price 0.12
 ```
 
 To run against real Chainlink and Supra prices, follow [Deploy to Hedera testnet](#deploy-to-hedera-testnet).
+
+## The app
+
+`yarn next:dev` serves the app at http://localhost:3000. A fresh scaffold points at the reference deployment on Hedera testnet, so it shows live prices and a funded pool before you deploy anything. Deploying regenerates `packages/nextjs/contracts/deployedContracts.ts` from your own deployments.
+
+| Screen | What it does | Engine calls |
+| --- | --- | --- |
+| **Trade** | Pick a market and a side, set collateral, leverage and term, and see the liquidation price, the wipe-out price and the profit cap before you commit. | `openPosition` |
+| **Positions** | Your open positions with live PnL, a bar showing where the price sits between liquidation and the cap, and a countdown to expiry. | `closePosition`, `settleExpired` |
+| **Pool** | Pool size, how much open positions have reserved, the share price, and deposit or withdraw. | `deposit`, `withdraw` |
+| **Liquidations** | Every open position across all traders, sorted by health, with a one-click liquidation and the reward it pays. | `liquidate` |
+| **Faucet** | Associate the collateral token and drip test tUSD. | `associate` on the token, `TestUSD.drip` |
+| **Markets** | Oracle health per market: the Chainlink price, the Supra check, how far apart they are against the tolerance, and the age of the price against its limit. | reads only |
+| **Claim** | Payouts that could not be delivered. | `claim` |
+| **Admin** | For the engine owner: switch a market to close-only, list a market, sweep the settlement budget, read the fixed parameters. | `setMarketOpenEnabled`, `listMarket`, `sweepNative` |
+
+It is one page with a sidebar on wide screens and a bottom tab bar on phones. The open screen is kept in the URL hash, so `/#pool` links straight to the pool.
+
+How it is built:
+
+- **Reads** are in `useTinyperp` (`packages/nextjs/hooks/tinyperp`). Each group of reads goes through Multicall3, which is deployed on Hedera but missing from viem's chain definitions, so `scaffold.config.ts` declares it. That makes a whole screen one RPC request per ten seconds instead of dozens.
+- **The maths is mirrored, not guessed.** `packages/nextjs/utils/tinyperp` reproduces the engine's entry price, payout, liquidation test and market status with the same integer arithmetic, so what the app shows is what the contract will do.
+- **Oracles are read directly.** The app calls the Chainlink feed and the Supra oracle itself, so it can show a price, its age and the disagreement even while the engine refuses to trade on them.
+- **Writes** are in `useTinyperpActions`. Each sets its own gas limit, because wallets underestimate calls that reach Hedera system contracts, and converts tinybars to weibars where a call carries HBAR.
+- **Association** comes from the mirror node, the only place that knows whether an account is associated or has a free auto-association slot.
+- **Approval is asked once.** An HTS approval costs about 0.6 HBAR, so the first trade or deposit requests a large allowance rather than one per transaction. Lower `APPROVAL_AMOUNT` in `utils/tinyperp` if you prefer exact approvals.
+
+The liquidation board reads the 60 most recent position ids. That is plenty for a template; a production app would index `PositionOpened` and `PositionSettled` events instead.
+
+The scaffold's developer pages are still there: `/debug` calls any contract function from its ABI, and `/blockexplorer` browses the local chain.
 
 ## How it works
 
@@ -478,7 +509,13 @@ tinyperp/
 │   │   ├── test/
 │   │   ├── utils/tinyperpConfig.ts     every tunable, per network
 │   │   └── hardhat.config.ts
-│   └── nextjs/                         Scaffold-HBAR frontend
+│   └── nextjs/
+│       ├── app/page.tsx                the Tinyperp app
+│       ├── components/tinyperp/        shell, screens, styles
+│       ├── hooks/tinyperp/             useTinyperp (reads), useTinyperpActions (writes)
+│       ├── utils/tinyperp/             engine maths, formatting, ABIs
+│       ├── contracts/                  generated addresses and ABIs
+│       └── scaffold.config.ts          target networks
 ├── AGENTS.md                           briefing for AI coding agents
 ├── template.json                       Scaffold-HBAR template manifest
 ├── LICENCE
