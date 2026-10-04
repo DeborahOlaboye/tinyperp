@@ -60,8 +60,8 @@ You need a deployer account with HBAR on the target network. Without funds, depl
 
 5. **Verify on Sourcify** (shows as verified on HashScan). Uses the solc standard-json from `artifacts/build-info` and submits directly to the Sourcify API v2 — `@nomicfoundation/hardhat-verify` is not used because its Hardhat 2-compatible line only speaks the removed Sourcify API v1:
    ```bash
-   yarn hardhat:verify -- PerpEngine testnet                          # address from deployments/hederaTestnet/
-   yarn hardhat:verify -- PerpEngine testnet 0xYourContractAddress    # explicit address
+   yarn hardhat:verify PerpEngine testnet                          # address from deployments/hederaTestnet/
+   yarn hardhat:verify PerpEngine testnet 0xYourContractAddress    # explicit address
    ```
    Use `mainnet` instead of `testnet` for chain 295.
 
