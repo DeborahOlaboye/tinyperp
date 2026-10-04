@@ -75,7 +75,8 @@ Tests fork Hedera testnet, so they need a network connection and take about a mi
 - System contracts **return a response code** instead of reverting. `22` is success. Check it and revert with a typed error that carries the code.
 - `createFungibleToken` is **payable**: the creation fee is `msg.value`.
 - The contract that calls `scheduleCall` **pays for the scheduled execution** and must hold the HBAR for it.
-- Hedera charges for at least 80% of a transaction's gas limit, so do not set limits far above what a call uses.
+- Booking a schedule costs about **1.41 million gas**, and `scheduleCall` burns everything it is given when that is too little. Always forward a bounded amount (`config.scheduleCallGas`), never the transaction's remaining gas. An `autoSettle` open needs a gas limit of at least 2.2 million.
+- **`block.timestamp` is the block's first-transaction time** and can be up to two seconds behind the second a scheduled call runs in. Do not book a call at the exact second a time check starts passing; the engine adds `SETTLE_DELAY`.
 - The local fork emulates HTS but **not** the Schedule Service. Unit tests install `MockScheduleService` at `0x16b` with `setCode`.
 
 ## Common tasks
